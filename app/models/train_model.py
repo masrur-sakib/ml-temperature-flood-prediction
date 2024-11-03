@@ -1,31 +1,29 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+# app/models/train_model.py
 import numpy as np
+import pandas as pd
 import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
 
-# Define the request body
-class PredictionRequest(BaseModel):
-    year: int
-    month: int
-    day: int
-    hour: int
+def create_sequences(data, n_steps):
+    X, y = [], []
+    for i in range(len(data) - n_steps):
+        X.append(data[i:i + n_steps, :-2])  # all columns except targets
+        y.append(data[i + n_steps, -2:])    # last two columns (temp, precipitation)
+    return np.array(X), np.array(y)
 
-app = FastAPI()
-model = tf.keras.models.load_model("data/weather_prediction_model.keras")
+def train_and_save_model(data_path, model_path, n_steps=24):
+    data = pd.read_csv(data_path)
+    X, y = create_sequences(data.values, n_steps)
+    split = int(len(X) * 0.8)
+    X_train, X_test = X[:split], X[split:]
+    y_train, y_test = y[:split], y[split:]
 
-@app.post("/predict")
-async def predict_weather(request: PredictionRequest):
-    # Example dummy sequence (replace with actual pre-processing if available)
-    # Here we create a dummy sequence of shape (1, 24, 7)
-    input_sequence = np.random.rand(1, 24, 7)  # replace with actual past data or pre-processed data
-
-    # Make a prediction
-    try:
-        prediction = model.predict(input_sequence)
-        temperature, precipitation = prediction[0]  # unpack results
-        return {
-            "temperature": float(temperature),
-            "precipitation": float(precipitation)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    model = Sequential([
+        LSTM(64, activation='relu', input_shape=(X_train.shape[1], X_train.shape[2])),
+        Dense(32, activation='relu'),
+        Dense(2)  # predicting two values: temperature and precipitation
+    ])
+    model.compile(optimizer='adam', loss='mse')
+    model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test))
+    model.save(model_path)
