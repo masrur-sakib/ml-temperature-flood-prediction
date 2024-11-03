@@ -1,5 +1,5 @@
 # app/api/predict.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 import numpy as np
 from app.models.load_model import load_prediction_model
@@ -15,23 +15,14 @@ class PredictionRequest(BaseModel):
     day: int
     hour: int
 
-class InputData(BaseModel):
-    features: list
-
 @router.get("/")
 def root():
     return {"name": "env ai server"}
 
 @router.post("/predict")
-async def predict(data: InputData):
-    try:
-        # Reshape the input data to match the expected shape (None, 24, 7)
-        input_data = np.array(data.features)
-        input_data = input_data.reshape(1, 24, 7)  # Reshape to match model's expected input
-
-        # Make prediction
-        prediction = model.predict(input_data)
-
-        return {"prediction": prediction.tolist()}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+def predict_weather(request: PredictionRequest):
+    # Preprocess input for prediction (e.g., scaling or feature engineering)
+    # Example:
+    future_data = np.array([[request.year, request.month, request.day, request.hour]])  # Adjust as needed
+    prediction = model.predict(future_data)
+    return {"temperature": prediction[0][0], "precipitation": prediction[0][1]}
