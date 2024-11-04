@@ -15,7 +15,6 @@ class PredictionRequest(BaseModel):
 app = FastAPI()
 model = tf.keras.models.load_model("data/weather_prediction_model.keras")
 historical_data = pd.read_csv('data/sylhet_weather_preprocessed.csv')
-print("Available columns:", historical_data.columns.tolist())
 historical_data['datetime'] = pd.to_datetime({
     'year': historical_data['YEAR'],
     'month': historical_data['MO'],
@@ -66,7 +65,6 @@ def get_recent_sequence(year, month, day, hour, n_steps=24):
 
     # Use the most recent similar sequence
     recent_data = np.array(similar_dates[-n_steps:])
-    print("Input sequence data for prediction:", recent_data)  # Debug print
     return recent_data[:, :-2].reshape(1, n_steps, 7)
 
 
