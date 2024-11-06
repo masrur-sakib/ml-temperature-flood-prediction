@@ -67,6 +67,9 @@ def get_recent_sequence(year, month, day, hour, n_steps=24):
     recent_data = np.array(similar_dates[-n_steps:])
     return recent_data[:, :-2].reshape(1, n_steps, 7)
 
+@app.get("/")
+def root():
+    return {"name": "env ai server"}
 
 @app.post("/predict")
 async def predict_weather(request: PredictionRequest):
