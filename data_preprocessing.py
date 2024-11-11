@@ -1,25 +1,30 @@
+# app/models/preprocess_flood_data.py
+
 import pandas as pd
-import numpy as np
-import json
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+import joblib
 
-def preprocess_data(file_path, output_path='data/sylhet_weather_preprocessed.csv'):
+def preprocess_flood_data(file_path):
+    # Load data
     data = pd.read_csv(file_path)
-    data = data[['YEAR', 'MO', 'DY', 'HR', 'T2M', 'RH2M', 'PRECTOTCORR', 'PS', 'WS10M']]
 
-    # Calculate and store mean and std for denormalization
-    means = data[['T2M', 'RH2M', 'PRECTOTCORR', 'PS', 'WS10M']].mean()
-    stds = data[['T2M', 'RH2M', 'PRECTOTCORR', 'PS', 'WS10M']].std()
+    # Select relevant columns and target column
+    data = data[['station_name', 'year', 'month', 'flood']]  # Assuming 'flood' is a binary column for flood occurrence
 
-    # Normalize the data
-    data[['T2M', 'RH2M', 'PRECTOTCORR', 'PS', 'WS10M']] = (data[['T2M', 'RH2M', 'PRECTOTCORR', 'PS', 'WS10M']] - means) / stds
+    # Encode categorical data (station_name)
+    label_encoder = LabelEncoder()
+    data['station_name'] = label_encoder.fit_transform(data['station_name'])
 
-    # Save processed data
-    data.to_csv(output_path, index=False)
+    # Scaling numerical features
+    scaler = StandardScaler()
+    data[['year', 'month']] = scaler.fit_transform(data[['year', 'month']])
 
-    # Save means and stds for later use
-    scaling_factors = {'means': means.to_dict(), 'stds': stds.to_dict()}
-    with open('data/scaling_factors.json', 'w') as f:
-        json.dump(scaling_factors, f)
+    # Save encoders and scaler for later use in prediction
+    joblib.dump(label_encoder, 'data/label_encoder.pkl')
+    joblib.dump(scaler, 'data/scaler.pkl')
 
-# Run preprocessing
-preprocess_data('data/sylhet_weather_2001_2024_hourly.csv')
+    # Save the processed data
+    data.to_csv('data/flood_data_preprocessed.csv', index=False)
+
+if __name__ == "__main__":
+    preprocess_flood_data('data/flood_data.csv')
