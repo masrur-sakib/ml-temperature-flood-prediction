@@ -14,39 +14,25 @@ class PredictionRequest(BaseModel):
 
 app = FastAPI()
 model = tf.keras.models.load_model("data/weather_prediction_model.keras")
-historical_data = pd.read_csv('data/sylhet_weather_preprocessed.csv')
-historical_data['datetime'] = pd.to_datetime({
-    'year': historical_data['YEAR'],
-    'month': historical_data['MO'],
-    'day': historical_data['DY'],
-    'hour': historical_data['HR']
+
+# Load the original data to get the date information
+original_data = pd.read_csv('data/sylhet_weather_2001_2024_hourly.csv')
+preprocessed_data = pd.read_csv('data/sylhet_weather_preprocessed.csv')
+
+# Create a datetime index for the preprocessed data
+preprocessed_data['datetime'] = pd.to_datetime({
+    'year': original_data['YEAR'],
+    'month': original_data['MO'],
+    'day': original_data['DY'],
+    'hour': original_data['HR']
 })
-historical_data.set_index('datetime', inplace=True)
-
-# Define allowed origins (modify as needed)
-origins = [
-    "http://127.0.0.1:5173",  # React app running locally
-    "http://localhost:5173"
-]
-
-# Add CORS middleware to allow specific origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,  # Allow listed origins only
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
-    allow_headers=["*"],   # Allow all headers
-)
+preprocessed_data.set_index('datetime', inplace=True)
 
 # Load scaling factors
 with open('data/scaling_factors.json', 'r') as f:
     scaling_factors = json.load(f)
-temperature_mean = scaling_factors['means']['T2M']
-temperature_std = scaling_factors['stds']['T2M']
-precipitation_mean = scaling_factors['means']['PRECTOTCORR']
-precipitation_std = scaling_factors['stds']['PRECTOTCORR']
 
-def get_recent_sequence(year, month, day, hour, n_steps=24):
+def prepare_input_sequence(year, month, day, hour, n_steps=24):
     # Convert request date to datetime
     target_date = pd.to_datetime(f'{year}-{month}-{day} {hour}:00:00')
 
@@ -54,32 +40,61 @@ def get_recent_sequence(year, month, day, hour, n_steps=24):
     similar_dates = []
     for prev_year in range(year-5, year):  # Use data from previous 5 years
         similar_date = target_date.replace(year=prev_year)
-        mask = (historical_data.index >= similar_date - pd.Timedelta(hours=n_steps)) & \
-               (historical_data.index < similar_date)
+        mask = (preprocessed_data.index >= similar_date - pd.Timedelta(hours=n_steps)) & \
+               (preprocessed_data.index < similar_date)
         if mask.any():
-            similar_dates.extend(historical_data[mask].values.tolist())
+            sequence = preprocessed_data[mask].values
+            if len(sequence) == n_steps:  # Only use complete sequences
+                similar_dates.append(sequence)
 
     if not similar_dates:
         # Fallback to last available sequence if no similar dates found
-        similar_dates = historical_data.tail(n_steps).values.tolist()
+        sequence = preprocessed_data.tail(n_steps).values
+        similar_dates.append(sequence)
 
     # Use the most recent similar sequence
-    recent_data = np.array(similar_dates[-n_steps:])
-    return recent_data[:, :-2].reshape(1, n_steps, 7)
+    recent_data = similar_dates[-1]
+
+    # Select only the required features (first 7 columns)
+    input_sequence = recent_data[:, :7]  # T2M,RH2M,PRECTOTCORR,PS,WS10M,Hour_Sin,Hour_Cos
+
+    return input_sequence.reshape(1, n_steps, 7)
 
 @app.get("/")
 def root():
     return {"name": "env ai server"}
 
+# Add CORS middleware
+origins = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.post("/predict")
 async def predict_weather(request: PredictionRequest):
-    input_sequence = get_recent_sequence(request.year, request.month, request.day, request.hour)
-    prediction = model.predict(input_sequence)
-    normalized_temperature, normalized_precipitation = prediction[0]
+    # Prepare input sequence
+    input_sequence = prepare_input_sequence(
+        request.year,
+        request.month,
+        request.day,
+        request.hour
+    )
 
-    # Denormalize predictions using saved mean and std values
-    temperature = (normalized_temperature * temperature_std) + temperature_mean
-    precipitation = (normalized_precipitation * precipitation_std) + precipitation_mean
+    # Make prediction
+    prediction = model.predict(input_sequence)
+    temperature_pred, precipitation_pred = prediction[0]
+
+    # Denormalize predictions
+    temperature = (temperature_pred * scaling_factors['stds']['T2M']) + scaling_factors['means']['T2M']
+    precipitation = (precipitation_pred * scaling_factors['stds']['PRECTOTCORR']) + scaling_factors['means']['PRECTOTCORR']
 
     return {
         "temperature": float(temperature),

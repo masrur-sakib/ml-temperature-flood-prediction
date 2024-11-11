@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 from sklearn.metrics import r2_score
 import json
@@ -20,13 +19,43 @@ def train_and_save_model(data_path, model_path, n_steps=24):
     X_train, X_test = X[:split], X[split:]
     y_train, y_test = y[:split], y[split:]
 
-    model = Sequential([
-        LSTM(64, activation='relu', input_shape=(X_train.shape[1], X_train.shape[2])),
-        Dense(32, activation='relu'),
-        Dense(2)
-    ])
-    model.compile(optimizer='adam', loss='mse')
-    model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test))
+    # Create model using Input layer
+    inputs = tf.keras.Input(shape=(X_train.shape[1], X_train.shape[2]))
+    x = LSTM(128, activation='relu', return_sequences=True)(inputs)
+    x = LSTM(64, activation='relu')(x)
+    x = Dense(64, activation='relu')(x)
+    x = Dense(32, activation='relu')(x)
+    x = Dense(16, activation='relu')(x)
+    outputs = Dense(2)(x)
+
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+
+    # Rest of the configuration remains the same
+    initial_learning_rate = 0.001
+    decay_steps = 1000
+    decay_rate = 0.9
+    learning_rate_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+        initial_learning_rate, decay_steps, decay_rate
+    )
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate_schedule)
+
+    model.compile(optimizer=optimizer, loss='mse')
+
+    early_stopping = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss',
+        patience=10,
+        restore_best_weights=True
+    )
+
+    model.fit(
+        X_train, y_train,
+        epochs=100,
+        batch_size=64,
+        validation_data=(X_test, y_test),
+        callbacks=[early_stopping],
+        verbose=1
+    )
+
     model.save(model_path)
 
 def calculate_accuracy(y_true, y_pred, tolerance_percentage=10):
@@ -74,4 +103,25 @@ def evaluate_model(model, X_test, y_test, scaling_factors_path='data/scaling_fac
     return r2, accuracy
 
 # Train and save the model
-train_and_save_model('data/sylhet_weather_preprocessed.csv', 'data/weather_prediction_model.keras')
+if __name__ == "__main__":
+    # Train and save the model
+    data_path = 'data/sylhet_weather_preprocessed.csv'
+    model_path = 'data/weather_prediction_model.keras'
+
+    print("Training model...")
+    train_and_save_model(data_path, model_path)
+
+    print("\nEvaluating model...")
+    # Load the trained model
+    model = tf.keras.models.load_model(model_path)
+
+    # Prepare data for evaluation
+    data = pd.read_csv(data_path)
+    X, y = create_sequences(data.values, n_steps=24)
+    split = int(len(X) * 0.8)
+    _, X_test = X[:split], X[split:]
+    _, y_test = y[:split], y[split:]
+
+    # Evaluate the model
+    r2, accuracy = evaluate_model(model, X_test, y_test)
+    print("accuracy", r2)
