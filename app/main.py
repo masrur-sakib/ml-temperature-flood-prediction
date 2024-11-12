@@ -7,6 +7,20 @@ import tensorflow as tf
 import pandas as pd
 import joblib
 
+
+# Temperature Prediction - input schema
+class PredictionRequest(BaseModel):
+    year: int
+    month: int
+    day: int
+    hour: int
+
+# Flood Prediction - input schema
+class FloodPredictionRequest(BaseModel):
+    station_name: str
+    year: int
+    month: int
+
 app = FastAPI()
 
 # Add CORS middleware
@@ -34,19 +48,6 @@ preprocessed_data = pd.read_csv('data/sylhet_weather_preprocessed.csv')
 flood_model = tf.keras.models.load_model('data/flood_prediction_model.keras')
 label_encoder = joblib.load('data/label_encoder.pkl')
 scaler = joblib.load('data/scaler.pkl')
-
-# Temperature Prediction - input schema
-class PredictionRequest(BaseModel):
-    year: int
-    month: int
-    day: int
-    hour: int
-
-# Flood Prediction - input schema
-class FloodPredictionRequest(BaseModel):
-    station_name: str
-    year: int
-    month: int
 
 # Create a datetime index for the preprocessed data
 preprocessed_data['datetime'] = pd.to_datetime({
@@ -89,11 +90,6 @@ def prepare_input_sequence(year, month, day, hour, n_steps=24):
     input_sequence = recent_data[:, :7]  # T2M,RH2M,PRECTOTCORR,PS,WS10M,Hour_Sin,Hour_Cos
 
     return input_sequence.reshape(1, n_steps, 7)
-
-# Backend Server Root Endpoint
-@app.get("/")
-def root():
-    return {"name": "env ai server"}
 
 # Temperature Prediction Endpoint
 @app.post("/predict")
