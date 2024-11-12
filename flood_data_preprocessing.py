@@ -1,5 +1,3 @@
-# app/models/preprocess_flood_data.py
-
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import joblib
