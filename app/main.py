@@ -15,6 +15,20 @@ class PredictionRequest(BaseModel):
 app = FastAPI()
 model = tf.keras.models.load_model("data/weather_prediction_model.keras")
 
+# Add CORS middleware
+origins = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Load the original data to get the date information
 original_data = pd.read_csv('data/sylhet_weather_2001_2024_hourly.csv')
 preprocessed_data = pd.read_csv('data/sylhet_weather_preprocessed.csv')
@@ -31,6 +45,7 @@ preprocessed_data.set_index('datetime', inplace=True)
 # Load scaling factors
 with open('data/scaling_factors.json', 'r') as f:
     scaling_factors = json.load(f)
+
 
 def prepare_input_sequence(year, month, day, hour, n_steps=24):
     # Convert request date to datetime
@@ -63,20 +78,6 @@ def prepare_input_sequence(year, month, day, hour, n_steps=24):
 @app.get("/")
 def root():
     return {"name": "env ai server"}
-
-# Add CORS middleware
-origins = [
-    "http://127.0.0.1:5173",
-    "http://localhost:5173"
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 @app.post("/predict")
 async def predict_weather(request: PredictionRequest):
